@@ -1,15 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 Обработка данных расчетов радиационной защиты (finder).
-Версия 1.6. Изменения относительно 1.4:
+Версия 1.5. Изменения относительно 1.4:
 - По умолчанию bottom=0.186 для графика.
 - Добавлены галочки логарифмического масштаба для осей X и Y.
 - Порядок столбцов в CSV изменён на ascending (min -> max).
 - Добавлена панель точек среза: клик по графику или ручной ввод,
-- выгрузка среза по заданному X или Y с исходными кривыми.
-- Добавлен прогресс-бар при загрузке данных.
-- Улучшен парсинг заголовков (фильтрация некорректных названий функционалов).
-- Исправлено масштабирование: bottom=0.186 применяется после tight_layout.
+  выгрузка среза по заданному X или Y с исходными кривыми.
 """
 import os
 import re
@@ -41,19 +38,18 @@ def parse_header(filepath):
     Читает заголовок файла.
     Возвращает:
     - n_cols: число столбцов (int)
-    - col_names: список названий функционалов (ВЕСЬ текст строки)
+    - col_names: список названий функционалов
+    (первый столбец - Probability)
     """
     with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
         lines = f.readlines()
-    
     n_cols = int(lines[1].strip().split()[0])
     col_names = []
-    
     for i in range(2, 2 + n_cols):
-        # Берем ВЕСЬ текст строки без каких-либо обрезок, split'ов и фильтров
         name = lines[i].strip()
+        if ' - ' in name:
+            name = name.split(' - ')[0].strip()
         col_names.append(name)
-        
     return n_cols, col_names
 
 def load_data(filepath, n_cols):
@@ -233,6 +229,7 @@ class App(tk.Tk):
 
         # область графика
         self.fig = plt.Figure(figsize=(11, 6.5), dpi=100)
+        self.fig.subplots_adjust(bottom=0.186)
         self.ax = self.fig.add_subplot(111)
         self.canvas = FigureCanvasTkAgg(self.fig, master=self)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -241,15 +238,6 @@ class App(tk.Tk):
 
         # обработчик клика по графику
         self.canvas.mpl_connect('button_press_event', self._on_canvas_click)
-
-        # ----- Прогресс-бар -----
-        self.progress_frame = ttk.Frame(self)
-        self.progress_frame.pack(fill=tk.X, padx=5, pady=2)
-        self.progress_bar = ttk.Progressbar(self.progress_frame, mode='determinate')
-        self.progress_bar.pack(fill=tk.X, padx=5, pady=2)
-        self.progress_label = ttk.Label(self.progress_frame, text="")
-        self.progress_label.pack(padx=5, pady=2)
-        self.progress_frame.pack_forget()  # Скрываем пока не нужен
 
         # статус
         self.status = tk.StringVar(value="Готово.")
@@ -363,28 +351,13 @@ class App(tk.Tk):
             messagebox.showerror("Ошибка чтения заголовка", str(e))
             return
         self.func_names = col_names[1:]
-
-        """         
         self.func_combo['values'] = self.func_names
         if self.func_names:
             saved = self.func_name.get()
             if saved in self.func_names:
                 self.func_combo.current(self.func_names.index(saved))
             else:
-                self.func_combo.current(0) 
-        """
-        # Создаем отображаемые имена: заменяем запятую для корректного отображения
-        self.display_names = [name.replace(',','_') for name in self.func_names]  # ‚ - одинарная кавычка-запятая
-    
-        self.func_combo['values'] = self.display_names
-        if self.func_names:
-            saved = self.func_name.get()
-            if saved in self.func_names:
-                idx = self.func_names.index(saved)
-                self.func_combo.current(idx)
-            else:
                 self.func_combo.current(0)
-
         self.status.set(
             f"Найдено директорий: {len(subdirs)}. "
             f"Столбцов в файле: {n_cols}. Функционалов: {len(self.func_names)}.")
@@ -396,12 +369,7 @@ class App(tk.Tk):
         if not work or not self.dirs:
             messagebox.showerror("Ошибка", "Сначала выполните сканирование заголовков.")
             return
-        # fname = self.func_name.get()
-        selection_index = self.func_combo.current()
-        if selection_index == -1:
-            messagebox.showerror("Ошибка", "Выберите функционал.")
-            return
-        fname = self.func_names[selection_index]  # Оригинальное имя из списка данных
+        fname = self.func_name.get()
         if not fname:
             messagebox.showerror("Ошибка", "Выберите функционал.")
             return
@@ -442,16 +410,7 @@ class App(tk.Tk):
             messagebox.showerror("Ошибка", f"Не удалось найти столбец '{fname}'.")
             return
 
-        # ----- Показываем прогресс-бар -----
-        total_dirs = len(self.dirs)
-        self.progress_bar['maximum'] = total_dirs
-        self.progress_bar['value'] = 0
-        self.progress_frame.pack(fill=tk.X, padx=5, pady=2, before=self.canvas.get_tk_widget())
-        self.progress_label.config(text="Загрузка данных...")
-        self.update_idletasks()
-
-        loaded_count = 0
-        for idx, d in enumerate(self.dirs):
+        for d in self.dirs:
             d_path = os.path.join(work, d)
             fpath = None
             for target in os.listdir(d_path):
@@ -462,37 +421,18 @@ class App(tk.Tk):
                         fpath = candidate
                         break
             if fpath is None:
-                self.progress_bar['value'] = idx + 1
-                self.progress_label.config(text=f"Пропущено: {d}")
-                self.update_idletasks()
                 continue
             try:
                 data = load_data(fpath, n_cols)
             except Exception as e:
                 print(f"Ошибка чтения {fpath}: {e}")
-                self.progress_bar['value'] = idx + 1
-                self.progress_label.config(text=f"Ошибка: {d}")
-                self.update_idletasks()
                 continue
             if data.size == 0:
-                self.progress_bar['value'] = idx + 1
-                self.progress_label.config(text=f"Пустой файл: {d}")
-                self.update_idletasks()
                 continue
             prob = data[:, 0]
             values = data[:, col_idx]
             vs, pc = transform_array(prob, values)
             self.loaded_data[d] = (vs, pc, float(vs.min()), float(vs.max()))
-            loaded_count += 1
-
-            # Обновляем прогресс-бар
-            self.progress_bar['value'] = idx + 1
-            self.progress_label.config(text=f"Загружено: {d} ({loaded_count}/{total_dirs})")
-            self.update_idletasks()
-
-        # Скрываем прогресс-бар после загрузки
-        self.progress_frame.pack_forget()
-        self.update_idletasks()
 
         if not self.loaded_data:
             messagebox.showwarning(
@@ -507,12 +447,8 @@ class App(tk.Tk):
         self.ax.set_ylabel("Вероятность (кумулятивная убывающая)")
         self.ax.set_title(f"Кривые по директориям. Функционал: {fname}")
         self.ax.grid(True, which='both', ls=':', alpha=0.5)
-        
-        # ИСПРАВЛЕНИЕ: сначала tight_layout, потом subplots_adjust
-        self.fig.tight_layout()
-        self.fig.subplots_adjust(bottom=0.186)
-        
         self._apply_log_scales()
+        self.fig.tight_layout()
         self.canvas.draw()
         self.status.set(f"Загружено директорий: {len(self.loaded_data)}.")
         self._save_settings()
@@ -540,9 +476,7 @@ class App(tk.Tk):
         try:
             self.ax.set_xscale('log' if self.log_x.get() else 'linear')
             self.ax.set_yscale('log' if self.log_y.get() else 'linear')
-            # ИСПРАВЛЕНИЕ: сначала tight_layout, потом subplots_adjust
             self.fig.tight_layout()
-            self.fig.subplots_adjust(bottom=0.186)
             self.canvas.draw()
         except Exception:
             pass
@@ -644,12 +578,8 @@ class App(tk.Tk):
                            linestyle='-.', label=f'X->Y: Mean trimmed (k={k})')
         self.stat_lines_x.extend([l1, l2, l3, l4, l5])
         self.ax.legend(fontsize='small', loc='best')
-        
-        # ИСПРАВЛЕНИЕ: сначала tight_layout, потом subplots_adjust
-        self.fig.tight_layout()
-        self.fig.subplots_adjust(bottom=0.186)
-        
         self._apply_log_scales()
+        self.fig.tight_layout()
         self.canvas.draw()
         self.x_result = (x_grid.copy(), y_max.copy(), y_min.copy(),
                          y_max_trim.copy(), y_min_trim.copy(), y_mean_trim.copy())
@@ -739,12 +669,8 @@ class App(tk.Tk):
                            label=f'Y->X: Mean trimmed (k={k})')
         self.stat_lines_y.extend([l1, l2, l3, l4, l5])
         self.ax.legend(fontsize='small', loc='best')
-        
-        # ИСПРАВЛЕНИЕ: сначала tight_layout, потом subplots_adjust
-        self.fig.tight_layout()
-        self.fig.subplots_adjust(bottom=0.186)
-        
         self._apply_log_scales()
+        self.fig.tight_layout()
         self.canvas.draw()
         self.y_result = (y_grid.copy(), x_max.copy(), x_min.copy(),
                          x_max_trim.copy(), x_min_trim.copy(), x_mean_trim.copy())

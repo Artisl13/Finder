@@ -3,6 +3,5 @@
 
 # Разрешить конкретные файлы
 !finder.py
-!finder_settings.json
 !README.md
 !.gitignore

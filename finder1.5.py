@@ -41,8 +41,23 @@ def parse_header(filepath):
     - col_names: список названий функционалов
     (первый столбец - Probability)
     """
-    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-        lines = f.readlines()
+    # Пробуем несколько распространённых кодировок для файлов с кириллицей
+    encodings_to_try = ['utf-8', 'cp1251', 'koi8-r', 'latin-1']
+    
+    for encoding in encodings_to_try:
+        try:
+            with open(filepath, 'r', encoding=encoding) as f:
+                lines = f.readlines()
+            # Проверяем, успешно ли прочитались строки (нет ошибок декодирования)
+            # Если дошли сюда, значит кодировка подошла
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        # Если ни одна кодировка не подошла, используем utf-8 с игнорированием ошибок
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+    
     n_cols = int(lines[1].strip().split()[0])
     col_names = []
     for i in range(2, 2 + n_cols):
@@ -57,8 +72,23 @@ def load_data(filepath, n_cols):
     Читает числовые данные из файла.
     Возвращает numpy-массив формы (n_rows, n_cols).
     """
-    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-        lines = f.readlines()
+    # Пробуем несколько распространённых кодировок для файлов с кириллицей
+    encodings_to_try = ['utf-8', 'cp1251', 'koi8-r', 'latin-1']
+    
+    for encoding in encodings_to_try:
+        try:
+            with open(filepath, 'r', encoding=encoding) as f:
+                lines = f.readlines()
+            # Проверяем, успешно ли прочитались строки (нет ошибок декодирования)
+            # Если дошли сюда, значит кодировка подошла
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        # Если ни одна кодировка не подошла, используем utf-8 с игнорированием ошибок
+        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+            lines = f.readlines()
+    
     header_lines = 2 + n_cols
     data_lines = lines[header_lines:]
     rows = []

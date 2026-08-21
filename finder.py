@@ -36,6 +36,21 @@ def get_settings_path():
 # =========================================================
 # Работа с файлами данных
 # =========================================================
+def detect_encoding(filepath):
+    """
+    Определяет кодировку файла путем последовательной попытки чтения.
+    Возвращает первую успешную кодировку из списка: utf-8, cp1251, koi8-r, latin-1.
+    """
+    encodings = ['utf-8', 'cp1251', 'koi8-r', 'latin-1']
+    for enc in encodings:
+        try:
+            with open(filepath, 'r', encoding=enc) as f:
+                f.read()
+            return enc
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    return 'utf-8'  # по умолчанию
+
 def parse_header(filepath):
     """
     Читает заголовок файла.
@@ -43,7 +58,8 @@ def parse_header(filepath):
     - n_cols: число столбцов (int)
     - col_names: список названий функционалов (ВЕСЬ текст строки)
     """
-    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+    encoding = detect_encoding(filepath)
+    with open(filepath, 'r', encoding=encoding) as f:
         lines = f.readlines()
     
     n_cols = int(lines[1].strip().split()[0])
@@ -61,7 +77,8 @@ def load_data(filepath, n_cols):
     Читает числовые данные из файла.
     Возвращает numpy-массив формы (n_rows, n_cols).
     """
-    with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+    encoding = detect_encoding(filepath)
+    with open(filepath, 'r', encoding=encoding) as f:
         lines = f.readlines()
     header_lines = 2 + n_cols
     data_lines = lines[header_lines:]

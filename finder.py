@@ -16,6 +16,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
+VERSION = "1.7"
+
 # =========================================================
 # Файл настроек
 # =========================================================
@@ -123,7 +125,7 @@ def transform_array(prob, values):
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Обработка данных радиационной защиты")
+        self.title(f"Обработка данных радиационной защиты (ver. {VERSION})")
         self.geometry("1200x900")
         self.work_dir   = tk.StringVar(value="")
         self.file_type  = tk.StringVar(value="DF71.dat")

@@ -1,17 +1,13 @@
 # -*- coding: utf-8 -*-
 """
 Обработка данных расчетов радиационной защиты (finder).
-Версия 1.6. Изменения относительно 1.4:
-- По умолчанию bottom=0.186 для графика.
-- Добавлены галочки логарифмического масштаба для осей X и Y.
-- Порядок столбцов в CSV изменён на ascending (min -> max).
-- Добавлена панель точек среза: клик по графику или ручной ввод,
-- выгрузка среза по заданному X или Y с исходными кривыми.
-- Добавлен прогресс-бар при загрузке данных.
-- Улучшен парсинг заголовков (фильтрация некорректных названий функционалов).
-- Исправлено масштабирование: bottom=0.186 применяется после tight_layout.
+Версия 1.7. Изменения относительно 1.6:
+- Исправлена работа с finder_settings.json после компиляции в EXE (sys.frozen).
+- Убрано непрерывное отображение координат мыши для снижения нагрузки на CPU.
+- Добавление точки среза только по клику левой кнопки мыши.
 """
 import os
+import sys
 import re
 import json
 import tkinter as tk
@@ -26,11 +22,16 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 SETTINGS_FILENAME = "finder_settings.json"
 
 def get_settings_path():
-    """Файл настроек располагается рядом со скриптом."""
-    try:
-        base = os.path.dirname(os.path.abspath(__file__))
-    except NameError:
-        base = os.getcwd()
+    """Файл настроек располагается рядом с исполняемым файлом (для EXE) или скриптом."""
+    if getattr(sys, 'frozen', False):
+        # Запуск из скомпилированного EXE
+        base = os.path.dirname(sys.executable)
+    else:
+        # Запуск из исходного скрипта
+        try:
+            base = os.path.dirname(os.path.abspath(__file__))
+        except NameError:
+            base = os.getcwd()
     return os.path.join(base, SETTINGS_FILENAME)
 
 # =========================================================
@@ -256,8 +257,12 @@ class App(tk.Tk):
         toolbar = NavigationToolbar2Tk(self.canvas, self.canvas.get_tk_widget())
         toolbar.update()
 
-        # обработчик клика по графику
+        # обработчик клика по графику (только левая кнопка для добавления точки среза)
         self.canvas.mpl_connect('button_press_event', self._on_canvas_click)
+        
+        # отключаем непрерывное отображение координат в статус-баре matplotlib для снижения нагрузки на CPU
+        # координаты отображаются только после клика по графику
+        self.ax.format_coord = lambda x, y: ""
 
         # ----- Прогресс-бар -----
         self.progress_frame = ttk.Frame(self)
@@ -774,7 +779,10 @@ class App(tk.Tk):
     # ПАНЕЛЬ ТОЧЕК СРЕЗА
     # =========================================================
     def _on_canvas_click(self, event):
-        """Обработчик клика по графику: добавляет точку в список среза."""
+        """Обработчик клика по графику: добавляет точку в список среза (только левая кнопка)."""
+        # Реагируем только на левую кнопку мыши (button == 1)
+        if event.button != 1:
+            return
         if event.inaxes != self.ax:
             return
         x = event.xdata

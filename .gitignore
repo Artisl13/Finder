@@ -1,17 +1,7 @@
-```
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# Игнорировать ВСЁ
+*
 
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-
-# Environment
-.env
-.env.local
-*.env.*
-```
+# Разрешить только это:
+!.gitignore
+!finder.py
+!README.md

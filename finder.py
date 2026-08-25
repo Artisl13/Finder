@@ -685,7 +685,8 @@ class App(tk.Tk):
         l5, = self.ax.plot(x_grid, y_mean_trim, color='purple', linewidth=2.5,
                            linestyle='-.', label=f'X->Y: Mean trimmed (k={k})')
         self.stat_lines_x.extend([l1, l2, l3, l4, l5])
-        self.ax.legend(fontsize='small', loc='best')
+        # Явно указываем handles и labels, чтобы избежать сканирования всех объектов на графике
+        self.ax.legend(handles=[l1, l2, l3, l4, l5], fontsize='small', loc='best')
         
         # ИСПРАВЛЕНИЕ: сначала tight_layout, потом subplots_adjust
         self.fig.tight_layout()
@@ -782,7 +783,8 @@ class App(tk.Tk):
                            linestyle='-.', marker='D', markersize=mksz,
                            label=f'Y->X: Mean trimmed (k={k})')
         self.stat_lines_y.extend([l1, l2, l3, l4, l5])
-        self.ax.legend(fontsize='small', loc='best')
+        # Явно указываем handles и labels, чтобы избежать сканирования всех объектов на графике
+        self.ax.legend(handles=[l1, l2, l3, l4, l5], fontsize='small', loc='best')
         
         # ИСПРАВЛЕНИЕ: сначала tight_layout, потом subplots_adjust
         self.fig.tight_layout()

@@ -1,10 +1,16 @@
 # -*- coding: utf-8 -*-
 """
 Обработка данных расчетов радиационной защиты (finder).
-Версия 1.7. Изменения относительно 1.6:
+Версия 1.8. Изменения относительно 1.7:
 - Исправлена работа с finder_settings.json после компиляции в EXE (sys.frozen).
 - Убрано непрерывное отображение координат мыши для снижения нагрузки на CPU.
 - Добавление точки среза только по клику левой кнопки мыши.
+- Оптимизация перерисовки графика: использование draw_idle() вместо draw() для 
+  отложенной перерисовки, что снижает нагрузку на CPU.
+- Устранение множественных вызовов canvas.draw(): теперь перерисовка выполняется 
+  один раз после всех изменений (логарифмический масштаб, добавление линий).
+- Оптимизация работы с точками среза: маркеры точек отображаются на графике, 
+  перерисовка выполняется только при необходимости.
 """
 import os
 import sys
@@ -16,7 +22,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
-VERSION = "1.7"
+VERSION = "1.8"
 
 # =========================================================
 # Файл настроек
@@ -147,6 +153,8 @@ class App(tk.Tk):
         self.y_result = None
         # Точки среза: список кортежей (x_given, y_given)
         self.slice_points = []
+        # Список художественных объектов (artists) для маркеров точек среза
+        self._slice_point_artists = []
         self._build_ui()
         self._load_settings()
         # при закрытии окна автоматически сохраняем настройки
@@ -536,8 +544,10 @@ class App(tk.Tk):
         self.fig.tight_layout()
         self.fig.subplots_adjust(bottom=0.186)
         
-        self._apply_log_scales()
-        self.canvas.draw()
+        # Применяем логарифмический масштаб без перерисовки (перерисуем ниже)
+        self._apply_log_scales(redraw=False)
+        # ОДИН вызов canvas.draw() вместо нескольких
+        self.canvas.draw_idle()
         self.status.set(f"Загружено директорий: {len(self.loaded_data)}.")
         self._save_settings()
 
@@ -559,15 +569,23 @@ class App(tk.Tk):
         self.stat_lines_y.clear()
 
     # ----- применение логарифмического масштаба -----
-    def _apply_log_scales(self):
-        """Применяет логарифмический масштаб к осям на основе состояния чекбоксов."""
+    def _apply_log_scales(self, redraw=True):
+        """Применяет логарифмический масштаб к осям на основе состояния чекбоксов.
+        
+        Args:
+            redraw: Если True, выполняет перерисовку холста. Если False, только
+                    применяет масштаб (для использования внутри других методов,
+                    которые сами выполняют перерисовку).
+        """
         try:
             self.ax.set_xscale('log' if self.log_x.get() else 'linear')
             self.ax.set_yscale('log' if self.log_y.get() else 'linear')
             # ИСПРАВЛЕНИЕ: сначала tight_layout, потом subplots_adjust
             self.fig.tight_layout()
             self.fig.subplots_adjust(bottom=0.186)
-            self.canvas.draw()
+            if redraw:
+                # Используем draw_idle для отложенной перерисовки (снижение нагрузки на CPU)
+                self.canvas.draw_idle()
         except Exception:
             pass
 
@@ -673,8 +691,10 @@ class App(tk.Tk):
         self.fig.tight_layout()
         self.fig.subplots_adjust(bottom=0.186)
         
-        self._apply_log_scales()
-        self.canvas.draw()
+        # Применяем логарифмический масштаб без перерисовки (перерисуем ниже)
+        self._apply_log_scales(redraw=False)
+        # ОДИН вызов canvas.draw() вместо нескольких
+        self.canvas.draw_idle()
         self.x_result = (x_grid.copy(), y_max.copy(), y_min.copy(),
                          y_max_trim.copy(), y_min_trim.copy(), y_mean_trim.copy())
         self.status.set(
@@ -768,8 +788,10 @@ class App(tk.Tk):
         self.fig.tight_layout()
         self.fig.subplots_adjust(bottom=0.186)
         
-        self._apply_log_scales()
-        self.canvas.draw()
+        # Применяем логарифмический масштаб без перерисовки (перерисуем ниже)
+        self._apply_log_scales(redraw=False)
+        # ОДИН вызов canvas.draw() вместо нескольких
+        self.canvas.draw_idle()
         self.y_result = (y_grid.copy(), x_max.copy(), x_min.copy(),
                          x_max_trim.copy(), x_min_trim.copy(), x_mean_trim.copy())
         self.status.set(
@@ -792,8 +814,12 @@ class App(tk.Tk):
         if x is None or y is None:
             return
         self.slice_points.append((float(x), float(y)))
-        self._update_points_listbox()
+        # Обновляем список без перерисовки графика
+        self._update_points_listbox(redraw_graph=False)
         self._save_settings()
+        # Одна перерисовка в конце
+        if hasattr(self, 'canvas'):
+            self.canvas.draw_idle()
 
     def _add_point_from_entry(self):
         """Добавляет точку из полей ручного ввода."""
@@ -804,8 +830,12 @@ class App(tk.Tk):
             messagebox.showerror("Ошибка", "Введите корректные числовые значения X и Y.")
             return
         self.slice_points.append((x, y))
-        self._update_points_listbox()
+        # Обновляем список без перерисовки графика (чтобы избежать лишних redraw)
+        self._update_points_listbox(redraw_graph=False)
         self._save_settings()
+        # Одна перерисовка в конце
+        if hasattr(self, 'canvas'):
+            self.canvas.draw_idle()
 
     def _remove_selected_point(self):
         """Удаляет выбранную точку из списка."""
@@ -816,8 +846,12 @@ class App(tk.Tk):
         idx = sel[0]
         if 0 <= idx < len(self.slice_points):
             self.slice_points.pop(idx)
-            self._update_points_listbox()
+            # Обновляем список без перерисовки графика
+            self._update_points_listbox(redraw_graph=False)
             self._save_settings()
+            # Одна перерисовка в конце
+            if hasattr(self, 'canvas'):
+                self.canvas.draw_idle()
 
     def _clear_all_points(self):
         """Очищает все точки среза."""
@@ -825,14 +859,56 @@ class App(tk.Tk):
             return
         if messagebox.askyesno("Подтверждение", "Удалить все точки среза?"):
             self.slice_points.clear()
-            self._update_points_listbox()
+            # Обновляем список без перерисовки графика
+            self._update_points_listbox(redraw_graph=False)
             self._save_settings()
+            # Одна перерисовка в конце
+            if hasattr(self, 'canvas'):
+                self.canvas.draw_idle()
 
-    def _update_points_listbox(self):
-        """Обновляет отображение списка точек."""
+    def _update_points_listbox(self, redraw_graph=True):
+        """Обновляет отображение списка точек.
+        
+        Args:
+            redraw_graph: Если True, перерисовывает график с точками среза.
+                          Если False, только обновляет список (для пакетных операций).
+        """
         self.points_listbox.delete(0, tk.END)
         for i, (x, y) in enumerate(self.slice_points):
             self.points_listbox.insert(tk.END, f"#{i+1}: X={x:.6g}, Y={y:.6g}")
+        
+        if redraw_graph and hasattr(self, 'ax') and self.slice_points:
+            # Перерисовываем точки среза на графике
+            # Удаляем старые маркеры точек среза (если они есть)
+            if hasattr(self, '_slice_point_artists'):
+                for artist in self._slice_point_artists:
+                    try:
+                        artist.remove()
+                    except Exception:
+                        pass
+                self._slice_point_artists.clear()
+            
+            # Добавляем новые маркеры
+            if self.slice_points:
+                slice_x = [p[0] for p in self.slice_points]
+                slice_y = [p[1] for p in self.slice_points]
+                artist = self.ax.scatter(slice_x, slice_y, color='red', s=50, 
+                                        marker='x', zorder=5, label='Точки среза' if len(self.slice_points)==1 else '')
+                self._slice_point_artists.append(artist)
+                # Используем draw_idle для оптимизации
+                if hasattr(self, 'canvas'):
+                    self.canvas.draw_idle()
+        elif redraw_graph and hasattr(self, 'ax') and not self.slice_points:
+            # Если точек нет, удаляем старые маркеры (очистка графика)
+            if hasattr(self, '_slice_point_artists'):
+                for artist in self._slice_point_artists:
+                    try:
+                        artist.remove()
+                    except Exception:
+                        pass
+                self._slice_point_artists.clear()
+                if hasattr(self, 'canvas'):
+                    self.canvas.draw_idle()
 
     # =========================================================
     # ВЫГРУЗКА СРЕЗОВ

@@ -1,0 +1,16 @@
+{
+  "work_dir": "D:/!prog/data_100",
+  "file_type": "DF71.dat",
+  "func_name": "SpDf 7.5 Pop 1",
+  "trim_coeff": "0.9",
+  "step_x": "1",
+  "step_y": "1",
+  "log_x": false,
+  "log_y": true,
+  "slice_points": [
+    [
+      54.96496876809296,
+      0.0036976971791680643
+    ]
+  ]
+}

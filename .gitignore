@@ -1,1 +1,7 @@
-Nothing should be ignored based on the provided changes. The only modified file is `finder.py`, which is a source code file and should not be added to .gitignore.
+# Игнорировать ВСЁ
+*
+
+# Разрешить только это:
+!.gitignore
+!finder.py
+!README.md

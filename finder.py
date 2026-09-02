@@ -258,13 +258,22 @@ class App(tk.Tk):
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         toolbar = NavigationToolbar2Tk(self.canvas, self.canvas.get_tk_widget())
         toolbar.update()
-
+        
+        # Отключаем обработку событий движения мыши для снижения нагрузки на CPU
+        # Это предотвращает постоянные перерисовки при движении мыши над графиком
+        self.canvas._tkcanvas.unbind('<Motion>')
+        
         # обработчик клика по графику (только левая кнопка для добавления точки среза)
-        self.canvas.mpl_connect('button_press_event', self._on_canvas_click)
+        self._click_cid = self.canvas.mpl_connect('button_press_event', self._on_canvas_click)
         
         # отключаем непрерывное отображение координат в статус-баре matplotlib для снижения нагрузки на CPU
         # координаты отображаются только после клика по графику
         self.ax.format_coord = lambda x, y: ""
+        
+        # Флаг для предотвращения множественных перерисовок
+        self._draw_pending = False
+        # Таймер для throttle перерисовок (мс)
+        self._redraw_delay_ms = 50
 
         # ----- Прогресс-бар -----
         self.progress_frame = ttk.Frame(self)
@@ -526,7 +535,7 @@ class App(tk.Tk):
         self.ax.clear()
         for d in sorted(self.loaded_data.keys()):
             vs, pc, _, _ = self.loaded_data[d]
-            self.ax.plot(vs, pc, color='dodgerblue', alpha=0.4, linewidth=0.8)
+            self.ax.plot(vs, pc, color='dodgerblue', alpha=0.4, linewidth=0.8, rasterized=True)
         self.ax.set_xlabel(fname)
         self.ax.set_ylabel("Вероятность (кумулятивная убывающая)")
         self.ax.set_title(f"Кривые по директориям. Функционал: {fname}")
@@ -538,8 +547,8 @@ class App(tk.Tk):
         
         # Применяем логарифмический масштаб без перерисовки (перерисуем ниже)
         self._apply_log_scales(redraw=False)
-        # ОДИН вызов canvas.draw() вместо нескольких
-        self.canvas.draw_idle()
+        # Используем throttle для перерисовки
+        self._schedule_redraw()
         self.status.set(f"Загружено директорий: {len(self.loaded_data)}.")
         self._save_settings()
 
@@ -576,8 +585,8 @@ class App(tk.Tk):
             self.fig.tight_layout()
             self.fig.subplots_adjust(bottom=0.186)
             if redraw:
-                # Используем draw_idle для отложенной перерисовки (снижение нагрузки на CPU)
-                self.canvas.draw_idle()
+                # Используем throttle для перерисовки (снижение нагрузки на CPU)
+                self._schedule_redraw()
         except Exception:
             pass
 
@@ -686,8 +695,8 @@ class App(tk.Tk):
         
         # Применяем логарифмический масштаб без перерисовки (перерисуем ниже)
         self._apply_log_scales(redraw=False)
-        # ОДИН вызов canvas.draw() вместо нескольких
-        self.canvas.draw_idle()
+        # Используем throttle для перерисовки
+        self._schedule_redraw()
         self.x_result = (x_grid.copy(), y_max.copy(), y_min.copy(),
                          y_max_trim.copy(), y_min_trim.copy(), y_mean_trim.copy())
         self.status.set(
@@ -784,8 +793,8 @@ class App(tk.Tk):
         
         # Применяем логарифмический масштаб без перерисовки (перерисуем ниже)
         self._apply_log_scales(redraw=False)
-        # ОДИН вызов canvas.draw() вместо нескольких
-        self.canvas.draw_idle()
+        # Используем throttle для перерисовки
+        self._schedule_redraw()
         self.y_result = (y_grid.copy(), x_max.copy(), x_min.copy(),
                          x_max_trim.copy(), x_min_trim.copy(), x_mean_trim.copy())
         self.status.set(
@@ -811,9 +820,8 @@ class App(tk.Tk):
         # Обновляем список без перерисовки графика
         self._update_points_listbox(redraw_graph=False)
         self._save_settings()
-        # Одна перерисовка в конце
-        if hasattr(self, 'canvas'):
-            self.canvas.draw_idle()
+        # Используем throttle для перерисовки
+        self._schedule_redraw()
 
     def _add_point_from_entry(self):
         """Добавляет точку из полей ручного ввода."""
@@ -827,9 +835,8 @@ class App(tk.Tk):
         # Обновляем список без перерисовки графика (чтобы избежать лишних redraw)
         self._update_points_listbox(redraw_graph=False)
         self._save_settings()
-        # Одна перерисовка в конце
-        if hasattr(self, 'canvas'):
-            self.canvas.draw_idle()
+        # Используем throttle для перерисовки
+        self._schedule_redraw()
 
     def _remove_selected_point(self):
         """Удаляет выбранную точку из списка."""
@@ -843,9 +850,8 @@ class App(tk.Tk):
             # Обновляем список без перерисовки графика
             self._update_points_listbox(redraw_graph=False)
             self._save_settings()
-            # Одна перерисовка в конце
-            if hasattr(self, 'canvas'):
-                self.canvas.draw_idle()
+            # Используем throttle для перерисовки
+            self._schedule_redraw()
 
     def _clear_all_points(self):
         """Очищает все точки среза."""
@@ -856,9 +862,8 @@ class App(tk.Tk):
             # Обновляем список без перерисовки графика
             self._update_points_listbox(redraw_graph=False)
             self._save_settings()
-            # Одна перерисовка в конце
-            if hasattr(self, 'canvas'):
-                self.canvas.draw_idle()
+            # Используем throttle для перерисовки
+            self._schedule_redraw()
 
     def _update_points_listbox(self, redraw_graph=True):
         """Обновляет отображение списка точек.
@@ -890,8 +895,7 @@ class App(tk.Tk):
                                         marker='x', zorder=5, label='Точки среза' if len(self.slice_points)==1 else '')
                 self._slice_point_artists.append(artist)
                 # Используем draw_idle для оптимизации
-                if hasattr(self, 'canvas'):
-                    self.canvas.draw_idle()
+                self._schedule_redraw()
         elif redraw_graph and hasattr(self, 'ax') and not self.slice_points:
             # Если точек нет, удаляем старые маркеры (очистка графика)
             if hasattr(self, '_slice_point_artists'):
@@ -901,8 +905,24 @@ class App(tk.Tk):
                     except Exception:
                         pass
                 self._slice_point_artists.clear()
-                if hasattr(self, 'canvas'):
-                    self.canvas.draw_idle()
+                self._schedule_redraw()
+    
+    def _schedule_redraw(self):
+        """Планирует перерисовку холста с throttle для снижения нагрузки на CPU.
+        
+        Использует after() для отложенной перерисовки, предотвращая множественные
+        вызовы canvas.draw() при быстрых последовательных обновлениях.
+        """
+        if self._draw_pending:
+            return  # Уже запланирована перерисовка, пропускаем
+        self._draw_pending = True
+        self.after(self._redraw_delay_ms, self._do_redraw)
+    
+    def _do_redraw(self):
+        """Выполняет перерисовку холста."""
+        if hasattr(self, 'canvas'):
+            self.canvas.draw_idle()
+        self._draw_pending = False
 
     # =========================================================
     # ВЫГРУЗКА СРЕЗОВ

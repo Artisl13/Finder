@@ -4,6 +4,7 @@
 Версия 1.8.3 Изменения относительно 1.8.2:
 - Выкинуты маркеры.
 - Растрированы линии
+- Лог загрузки директорий
 """
 import os
 import sys
@@ -485,6 +486,10 @@ class App(tk.Tk):
         self.update_idletasks()
 
         loaded_count = 0
+
+        skipped_dirs = []
+        skipped_reasons = {}
+
         for idx, d in enumerate(self.dirs):
             d_path = os.path.join(work, d)
             fpath = None
@@ -496,23 +501,41 @@ class App(tk.Tk):
                         fpath = candidate
                         break
             if fpath is None:
+                skipped_dirs.append(d)
+                skipped_reasons[d] = "Файл типа '{}' не найден в поддиректориях".format(ftype)
                 self.progress_bar['value'] = idx + 1
                 self.progress_label.config(text=f"Пропущено: {d}")
                 self.update_idletasks()
                 continue
+
+            # === ИЗМЕНЕНО: разделены MemoryError и остальные Exception ===
             try:
                 data = load_data(fpath, n_cols)
+            except MemoryError as e:
+                skipped_dirs.append(d)
+                skipped_reasons[d] = f"MemoryError (нехватка памяти): {e}"
+                print(f"MemoryError при чтении {fpath}: {e}")
+                self.progress_bar['value'] = idx + 1
+                self.progress_label.config(text=f"Нехватка памяти: {d}")
+                self.update_idletasks()
+                continue
             except Exception as e:
+                skipped_dirs.append(d)
+                skipped_reasons[d] = f"{type(e).__name__}: {e}"
                 print(f"Ошибка чтения {fpath}: {e}")
                 self.progress_bar['value'] = idx + 1
                 self.progress_label.config(text=f"Ошибка: {d}")
                 self.update_idletasks()
                 continue
             if data.size == 0:
+                # === НОВОЕ: логируем пустой файл ===
+                skipped_dirs.append(d)
+                skipped_reasons[d] = "Пустой файл (не распарсилось ни одной строки)"
                 self.progress_bar['value'] = idx + 1
                 self.progress_label.config(text=f"Пустой файл: {d}")
                 self.update_idletasks()
                 continue
+
             prob = data[:, 0]
             values = data[:, col_idx]
             vs, pc = transform_array(prob, values)
@@ -523,6 +546,23 @@ class App(tk.Tk):
             self.progress_bar['value'] = idx + 1
             self.progress_label.config(text=f"Загружено: {d} ({loaded_count}/{total_dirs})")
             self.update_idletasks()
+
+        # === НОВОЕ: запись лога пропущенных директорий ===
+        if skipped_dirs:
+            log_path = os.path.join(work, "_load_errors.log")
+            try:
+                with open(log_path, 'w', encoding='utf-8') as lf:
+                    lf.write(f"Пропущено директорий: {len(skipped_dirs)} из {total_dirs}\n\n")
+                    for sd in skipped_dirs:
+                        lf.write(f"[{sd}] {skipped_reasons[sd]}\n")
+            except Exception:
+                log_path = None
+
+            msg = (f"Загружено {loaded_count} из {total_dirs} директорий.\n"
+                   f"Пропущено: {len(skipped_dirs)}.")
+            if log_path:
+                msg += f"\n\nПодробный лог сохранён:\n{log_path}"
+            messagebox.showwarning("Внимание", msg)
 
         # Скрываем прогресс-бар после загрузки
         self.progress_frame.pack_forget()

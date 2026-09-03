@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 Обработка данных расчетов радиационной защиты (finder).
-Версия 1.8.2 Изменения относительно 1.8.1:
-- Отключено событие <Motion> на холсте, чтобы прекратить обработку движений мыши.
-- Введён механизм ограничения частоты перерисовок (throttle) с задержкой 50 мс, предотвращающий множественные одновременные перерисовки.
-- Применена растеризация (rasterized=True) для линий на графике, что снижает нагрузку при отображении большого количества данных.
-- Все вызовы перерисовки (canvas.draw_idle()) заменены на отложенные, с единым управлением.
+Версия 1.8.3 Изменения относительно 1.8.2:
+- Выкинуты маркеры.
+- Растрированы линии
 """
 import os
 import sys
@@ -17,7 +15,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 
-VERSION = "1.8.2"
+VERSION = "1.8.3"
 
 # =========================================================
 # Файл настроек
@@ -774,17 +772,17 @@ class App(tk.Tk):
                 x_mean_trim[j] = np.mean(x_sorted)
         mksz = 4
         l1, = self.ax.plot(x_max, y_grid, color='red', linewidth=1.5,
-                           marker='o', markersize=mksz, label='Y->X: Max')
+                           rasterized=True, label='Y->X: Max')
         l2, = self.ax.plot(x_min, y_grid, color='blue', linewidth=1.5,
-                           marker='s', markersize=mksz, label='Y->X: Min')
+                           rasterized=True, label='Y->X: Min')
         l3, = self.ax.plot(x_max_trim, y_grid, color='darkorange', linewidth=1.5,
-                           linestyle='--', marker='^', markersize=mksz,
+                           linestyle='--',rasterized=True,  
                            label=f'Y->X: Max-trim (k={k})')
         l4, = self.ax.plot(x_min_trim, y_grid, color='green', linewidth=1.5,
-                           linestyle='--', marker='v', markersize=mksz,
+                           linestyle='--', rasterized=True, 
                            label=f'Y->X: Min+trim (k={k})')
         l5, = self.ax.plot(x_mean_trim, y_grid, color='purple', linewidth=2.0,
-                           linestyle='-.', marker='D', markersize=mksz,
+                           linestyle='-.', rasterized=True, 
                            label=f'Y->X: Mean trimmed (k={k})')
         self.stat_lines_y.extend([l1, l2, l3, l4, l5])
         # Явно указываем handles и labels, чтобы избежать сканирования всех объектов на графике
